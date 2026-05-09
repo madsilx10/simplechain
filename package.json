@@ -1,0 +1,13 @@
+{
+  "name": "simplechain-bot",
+  "version": "1.0.0",
+  "description": "SimpleChain task bot - multi wallet",
+  "main": "simplechain-bot.js",
+  "scripts": {
+    "start": "node simplechain-bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "ethers": "^6.0.0"
+  }
+}
