@@ -262,33 +262,36 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
   const bal = await tokenContract.balanceOf(signer.address);
 
-  if (bal === 0n) {
-    log(name, address, `⚠️ Balance ${tokenName} kosong, skip`);
+  const MIN_AMOUNT = ethers.parseEther("0.5");
+
+  if (bal === 0n || bal < MIN_AMOUNT) {
+    log(name, address, `⚠️ Balance ${tokenName} < 0.5, skip (balance: ${ethers.formatEther(bal)})`);
     return;
   }
 
-  // Random 50-100% dari balance token
+  // Random 50-100% dari balance, minimal 0.5 token
   const pct = BigInt(Math.floor(Math.random() * 51) + 50);
-  const amountToken = (bal * pct) / 100n;
+  const amountByPct = (bal * pct) / 100n;
+  const amountToken = amountByPct < MIN_AMOUNT ? MIN_AMOUNT : amountByPct;
 
   // Pair: SRW (native via WSRW) + token
   // Sort: token0 < token1
   // Kalau WSRW jadi token0, native SRW dikirim via value sebagai amount0
   // Kalau WSRW jadi token1, native SRW dikirim via value sebagai amount1
-  // Kita pakai amount SRW sama dengan amountToken sebagai estimasi
-  const amountSRW = amountToken; // bisa disesuaikan, router akan pakai sesuai rasio pool
+  // Kita pakai 10% dari amountToken sebagai estimasi native SRW
+  const amountSRW = amountToken / 10n; // bisa disesuaikan, router akan pakai sesuai rasio pool
 
   let t0, t1, a0, a1, nativeValue;
   if (WSRW.toLowerCase() < tokenAddress.toLowerCase()) {
     // WSRW = token0, tokenAddress = token1
     t0 = WSRW; t1 = tokenAddress;
     a0 = amountSRW; a1 = amountToken;
-    nativeValue = amountSRW;
+    nativeValue = amountSRW; // kirim native SRW sebagai amount0
   } else {
     // tokenAddress = token0, WSRW = token1
     t0 = tokenAddress; t1 = WSRW;
-    a0 = amountToken; a1 = amountSRW;
-    nativeValue = amountSRW;
+    a0 = amountToken; a1 = 0n; // WSRW sebagai token1, amount1 = 0, ga perlu native SRW
+    nativeValue = 0n;
   }
 
   await withRetry(() => ensureApproval(signer, tokenAddress, LIQUIDITY_ROUTER, amountToken), `approve ${tokenName}`);
