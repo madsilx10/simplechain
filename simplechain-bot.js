@@ -273,11 +273,22 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
 
   // Pair: SRW (native via WSRW) + token
   // Sort: token0 < token1
-  let t0, t1, a0, a1;
+  // Kalau WSRW jadi token0, native SRW dikirim via value sebagai amount0
+  // Kalau WSRW jadi token1, native SRW dikirim via value sebagai amount1
+  // Kita pakai amount SRW sama dengan amountToken sebagai estimasi
+  const amountSRW = amountToken; // bisa disesuaikan, router akan pakai sesuai rasio pool
+
+  let t0, t1, a0, a1, nativeValue;
   if (WSRW.toLowerCase() < tokenAddress.toLowerCase()) {
-    t0 = WSRW; t1 = tokenAddress; a0 = 0n; a1 = amountToken;
+    // WSRW = token0, tokenAddress = token1
+    t0 = WSRW; t1 = tokenAddress;
+    a0 = amountSRW; a1 = amountToken;
+    nativeValue = amountSRW;
   } else {
-    t0 = tokenAddress; t1 = WSRW; a0 = amountToken; a1 = 0n;
+    // tokenAddress = token0, WSRW = token1
+    t0 = tokenAddress; t1 = WSRW;
+    a0 = amountToken; a1 = amountSRW;
+    nativeValue = amountSRW;
   }
 
   await withRetry(() => ensureApproval(signer, tokenAddress, LIQUIDITY_ROUTER, amountToken), `approve ${tokenName}`);
@@ -295,7 +306,7 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
       recipient: signer.address,
       deadline,
     },
-    { value: t0 === WSRW ? 0n : 0n } // native SRW tidak diperlukan karena kita pair token/WSRW
+    { value: nativeValue }
   );
   const receipt = await tx.wait();
   log(name, address, `✅ Add liquidity SRW+${tokenName} (${pct}%) tx: ${receipt.hash}`);
