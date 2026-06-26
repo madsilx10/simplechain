@@ -267,34 +267,38 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
     return;
   }
 
-  // Random 50-100% dari balance (min 0.5x)
-  const pct = BigInt(Math.floor(Math.random() * 51) + 50); // 50-100%
-  const amount = (bal * pct) / 100n;
+  // Random 50-100% dari balance token
+  const pct = BigInt(Math.floor(Math.random() * 51) + 50);
+  const amountToken = (bal * pct) / 100n;
 
-  // Sort tokens (Uniswap V3: token0 < token1)
+  // Pair: SRW (native via WSRW) + token
+  // Sort: token0 < token1
   let t0, t1, a0, a1;
   if (WSRW.toLowerCase() < tokenAddress.toLowerCase()) {
-    t0 = WSRW; t1 = tokenAddress; a0 = 0n; a1 = amount;
+    t0 = WSRW; t1 = tokenAddress; a0 = 0n; a1 = amountToken;
   } else {
-    t0 = tokenAddress; t1 = WSRW; a0 = amount; a1 = 0n;
+    t0 = tokenAddress; t1 = WSRW; a0 = amountToken; a1 = 0n;
   }
 
-  await withRetry(() => ensureApproval(signer, tokenAddress, LIQUIDITY_ROUTER, amount), `approve ${tokenName}`);
+  await withRetry(() => ensureApproval(signer, tokenAddress, LIQUIDITY_ROUTER, amountToken), `approve ${tokenName}`);
 
   const posManager = new ethers.Contract(LIQUIDITY_ROUTER, LIQUIDITY_ABI, signer);
   const deadline = Math.floor(Date.now() / 1000) + 600;
 
-  const tx = await posManager.mint({
-    token0: t0, token1: t1,
-    fee: FEE_TIER,
-    tickLower: -887160, tickUpper: 887160,
-    amount0Desired: a0, amount1Desired: a1,
-    amount0Min: 0n, amount1Min: 0n,
-    recipient: signer.address,
-    deadline,
-  });
+  const tx = await posManager.mint(
+    {
+      token0: t0, token1: t1,
+      fee: FEE_TIER,
+      tickLower: -887160, tickUpper: 887160,
+      amount0Desired: a0, amount1Desired: a1,
+      amount0Min: 0n, amount1Min: 0n,
+      recipient: signer.address,
+      deadline,
+    },
+    { value: t0 === WSRW ? 0n : 0n } // native SRW tidak diperlukan karena kita pair token/WSRW
+  );
   const receipt = await tx.wait();
-  log(name, address, `✅ Add liquidity ${tokenName} (${pct}%) tx: ${receipt.hash}`);
+  log(name, address, `✅ Add liquidity SRW+${tokenName} (${pct}%) tx: ${receipt.hash}`);
 }
 
 // ==================== PROCESS MODES ====================
@@ -367,7 +371,7 @@ async function processOnchainMode(wallet, name, address, swapTokens, liqTokens) 
   if (liqTokens.length > 0) {
     const liqTasks = tasks.filter(t => t.taskCode === "PROVIDE_LIQUIDITY" && t.status === "ACTIVE");
     for (const tok of liqTokens) {
-      log(name, address, `Add liquidity ${tok.name}...`);
+      log(name, address, `Add liquidity SRW+${tok.name}...`);
       await withRetry(() => doAddLiquidity(signer, tok.address, tok.name, name, address), `add liq ${tok.name}`);
       await sleep(3000);
     }
