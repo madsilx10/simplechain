@@ -279,7 +279,7 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   // Kalau WSRW jadi token0, native SRW dikirim via value sebagai amount0
   // Kalau WSRW jadi token1, native SRW dikirim via value sebagai amount1
   // Kita pakai 10% dari amountToken sebagai estimasi native SRW
-  const amountSRW = amountToken / 10n; // bisa disesuaikan, router akan pakai sesuai rasio pool
+  const amountSRW = amountToken / 100n; // 1% dari token amount // bisa disesuaikan, router akan pakai sesuai rasio pool
 
   let t0, t1, a0, a1, nativeValue;
   if (WSRW.toLowerCase() < tokenAddress.toLowerCase()) {
