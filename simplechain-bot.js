@@ -311,17 +311,21 @@ async function processWallet({ name, pk }) {
     // Get WSRW balance dulu
     const wsrwContract = new ethers.Contract(WSRW, ERC20_ABI, wallet);
 
-    // Swap WSRW → MERCURY
-    const amountMercury = randomBetween(SWAP_MIN, SWAP_MAX);
-    log(name, address, `Swap ${ethers.formatEther(amountMercury)} WSRW → MERCURY`);
-    await withRetry(() => doSwap(wallet, MERCURY, amountMercury, name, address), "swap MERCURY");
-    await sleep(3000);
+    // Swap SRW → MERCURY (5x)
+    for (let s = 1; s <= 5; s++) {
+      const amountMercury = randomBetween(SWAP_MIN, SWAP_MAX);
+      log(name, address, `[/5] Swap ${ethers.formatEther(amountMercury)} SRW → MERCURY`);
+      await withRetry(() => doSwap(wallet, MERCURY, amountMercury, name, address), "swap MERCURY");
+      await sleep(3000);
+    }
 
-    // Swap WSRW → MARS
-    const amountMars = randomBetween(SWAP_MIN, SWAP_MAX);
-    log(name, address, `Swap ${ethers.formatEther(amountMars)} WSRW → MARS`);
-    await withRetry(() => doSwap(wallet, MARS, amountMars, name, address), "swap MARS");
-    await sleep(3000);
+    // Swap SRW → MARS (5x)
+    for (let s = 1; s <= 5; s++) {
+      const amountMars = randomBetween(SWAP_MIN, SWAP_MAX);
+      log(name, address, `[/5] Swap ${ethers.formatEther(amountMars)} SRW → MARS`);
+      await withRetry(() => doSwap(wallet, MARS, amountMars, name, address), "swap MARS");
+      await sleep(3000);
+    }
 
     // Complete swap tasks
     for (const swapTask of swapTasks) {
