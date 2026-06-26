@@ -287,7 +287,7 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   const tx = await posManager.mint({
     token0: t0, token1: t1,
     fee: FEE_TIER,
-    tickLower: -887220, tickUpper: 887220,
+    tickLower: -887160, tickUpper: 887160,
     amount0Desired: a0, amount1Desired: a1,
     amount0Min: 0n, amount1Min: 0n,
     recipient: signer.address,
