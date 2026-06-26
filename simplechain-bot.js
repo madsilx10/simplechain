@@ -107,8 +107,19 @@ async function selectWallets() {
   });
   console.log("\n  1. Semua wallet");
   console.log("  2. Pilih wallet tertentu");
-  const mode = await prompt("\nPilih (1/2): ");
+  console.log("  3. From X to end");
+  const mode = await prompt("\nPilih (1/2/3): ");
   if (mode === "1") return ALL_WALLETS;
+  if (mode === "3") {
+    const input = await prompt(`Mulai dari nomor wallet (1-${ALL_WALLETS.length}): `);
+    const start = parseInt(input.trim()) - 1;
+    if (isNaN(start) || start < 0 || start >= ALL_WALLETS.length) {
+      console.error("❌ Nomor tidak valid."); process.exit(1);
+    }
+    const selected = ALL_WALLETS.slice(start);
+    console.log(`✅ Dipilih: wallet ${start + 1} s/d ${ALL_WALLETS.length} (${selected.map(w => w.name).join(", ")})`);
+    return selected;
+  }
   const input = await prompt("Nomor wallet (pisah koma, contoh: 1,3): ");
   const selected = input.split(",")
     .map(n => ALL_WALLETS[parseInt(n.trim()) - 1])
@@ -262,17 +273,17 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
   const bal = await tokenContract.balanceOf(signer.address);
 
-  const MIN_AMOUNT = ethers.parseEther("0.5");
+  const MIN_AMOUNT = ethers.parseEther("0.0001");
 
   if (bal === 0n || bal < MIN_AMOUNT) {
-    log(name, address, `⚠️ Balance ${tokenName} < 0.5, skip (balance: ${ethers.formatEther(bal)})`);
+    log(name, address, `⚠️ Balance ${tokenName} kosong, skip (balance: ${ethers.formatEther(bal)})`);
     return;
   }
 
-  // Random 50-100% dari balance, minimal 0.5 token
+  // Random 50-100% dari balance
   const pct = BigInt(Math.floor(Math.random() * 51) + 50);
   const amountByPct = (bal * pct) / 100n;
-  const amountToken = amountByPct < MIN_AMOUNT ? MIN_AMOUNT : amountByPct;
+  const amountToken = amountByPct;
 
   // Pair: SRW (native via WSRW) + token
   // Sort: token0 < token1
