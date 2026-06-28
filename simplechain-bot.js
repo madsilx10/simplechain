@@ -25,10 +25,13 @@ const WSRW    = "0xec1bF294Ea5b3271A87606B51F5465352bc19bE5";
 const MERCURY = "0x8c0c42fD298623d035eeFd8b2783c94069610d2B";
 const MARS    = "0xFC12Ae35889A4a6D0b1cE94a6675Ef869F6eb207";
 
-const SWAP_ROUTER     = "0x43b06d73dC0dDB9214B28349a913A2b7FAAFCEe8";
+const SWAP_ROUTER      = "0x43b06d73dC0dDB9214B28349a913A2b7FAAFCEe8";
 const LIQUIDITY_ROUTER = "0x6E172Ba709487fd0Dc47D8A23e128C0328E0646c";
+const FACTORY          = "0x98E4788a549F93437c327e7DD859769E234fd4E5";
 
-const FEE_TIER  = 3000;
+const FEE_TIER      = 3000;
+const TICK_SPACING  = 60;   // tickSpacing untuk fee 3000
+const TICK_RANGE    = 600;  // ±600 ticks dari current price
 const SWAP_MIN  = ethers.parseEther("0.0001");
 const SWAP_MAX  = ethers.parseEther("0.005");
 const SWAP_COUNT = 5;
@@ -45,6 +48,15 @@ const SWAP_ROUTER_ABI = [
 
 const LIQUIDITY_ABI = [
   "function mint((address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint256 amount0Desired, uint256 amount1Desired, uint256 amount0Min, uint256 amount1Min, address recipient, uint256 deadline) params) external payable returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)",
+];
+
+const FACTORY_ABI = [
+  "function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)",
+];
+
+const POOL_ABI = [
+  "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
+  "function token0() external view returns (address)",
 ];
 
 const TOKENS = {
@@ -258,6 +270,17 @@ async function doSwap(signer, tokenOut, amountIn, name, address) {
   return receipt;
 }
 
+async function getCurrentTick(provider, tokenA, tokenB, fee) {
+  const factory = new ethers.Contract(FACTORY, FACTORY_ABI, provider);
+  const poolAddr = await factory.getPool(tokenA, tokenB, fee);
+  if (poolAddr === ethers.ZeroAddress) throw new Error("Pool tidak ditemukan");
+  const pool = new ethers.Contract(poolAddr, POOL_ABI, provider);
+  const [, tick] = await pool.slot0();
+  // cek urutan token0 di pool (bisa beda dari yg kita pass)
+  const poolToken0 = (await pool.token0()).toLowerCase();
+  return { tick: Number(tick), poolToken0 };
+}
+
 async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
   const bal = await tokenContract.balanceOf(signer.address);
@@ -278,10 +301,25 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   // SRW selalu jadi token1 (biar UI auto-select SRW range)
   const amountSRW = amountToken / 10000n; // 0.01% dari token amount
 
+  // Fetch current tick dari pool & cek urutan token0/token1
+  const { tick: currentTick, poolToken0 } = await withRetry(
+    () => getCurrentTick(signer.provider, tokenAddress, WSRW, FEE_TIER),
+    `getCurrentTick ${tokenName}`
+  );
+  log(name, address, `📊 Current tick: ${currentTick}`);
+
+  const tickLower = Math.floor((currentTick - TICK_RANGE) / TICK_SPACING) * TICK_SPACING;
+  const tickUpper = Math.ceil((currentTick + TICK_RANGE) / TICK_SPACING) * TICK_SPACING;
+
+  // Sesuaikan urutan token berdasarkan pool yg sebenarnya
   let t0, t1, a0, a1, nativeValue;
-  // token0 = token, token1 = SRW
-  t0 = tokenAddress; t1 = WSRW;
-  a0 = amountToken; a1 = amountSRW;
+  if (poolToken0 === tokenAddress.toLowerCase()) {
+    t0 = tokenAddress; t1 = WSRW;
+    a0 = amountToken;  a1 = amountSRW;
+  } else {
+    t0 = WSRW;         t1 = tokenAddress;
+    a0 = amountSRW;    a1 = amountToken;
+  }
   nativeValue = amountSRW;
 
   await withRetry(() => ensureApproval(signer, tokenAddress, LIQUIDITY_ROUTER, amountToken), `approve ${tokenName}`);
@@ -293,7 +331,8 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
     {
       token0: t0, token1: t1,
       fee: FEE_TIER,
-      tickLower: -276326, tickUpper: 276326,
+      tickLower,
+      tickUpper,
       amount0Desired: a0, amount1Desired: a1,
       amount0Min: 0n, amount1Min: 0n,
       recipient: signer.address,
