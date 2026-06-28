@@ -68,7 +68,7 @@ const TOKENS = {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function randomJeda() {
-  return Math.floor(Math.random() * (5 * 60 * 1000 - 1 * 60 * 1000 + 1)) + 1 * 60 * 1000;
+  return Math.floor(Math.random() * (2 * 60 * 1000 + 1)); // 0-2 menit
 }
 
 function randomBetween(min, max) {
@@ -220,6 +220,20 @@ async function completeTask(token, taskId) {
   const data = await res.json();
   if (data.code !== 0) return { success: false, msg: data.message };
   return { success: true, points: data.data?.rewardPoints };
+}
+
+async function completeTaskWithRetry(token, taskId, label, name, address, delayMs = 15000) {
+  let attempt = 1;
+  while (true) {
+    const r = await completeTask(token, taskId);
+    if (r.success) {
+      log(name, address, `✅ ${label} +${r.points} pts`);
+      return r;
+    }
+    log(name, address, `⏳ ${label} belum ke-detect (attempt ${attempt}): ${r.msg} — retry in ${delayMs/1000}s...`);
+    attempt++;
+    await sleep(delayMs);
+  }
 }
 
 async function dailyCheckin(token) {
@@ -405,8 +419,7 @@ async function processOnchainMode(wallet, name, address, swapTokens, liqTokens) 
     // Complete swap tasks
     for (const t of swapTasks) {
       await sleep(DELAY);
-      const r = await completeTask(token, t.taskId);
-      log(name, address, r.success ? `✅ ${t.taskName} +${r.points} pts` : `⚠️ ${t.taskName}: ${r.msg}`);
+      await completeTaskWithRetry(token, t.taskId, t.taskName, name, address);
     }
   }
 
@@ -421,8 +434,7 @@ async function processOnchainMode(wallet, name, address, swapTokens, liqTokens) 
     // Complete liquidity tasks
     for (const t of liqTasks) {
       await sleep(DELAY);
-      const r = await completeTask(token, t.taskId);
-      log(name, address, r.success ? `✅ ${t.taskName} +${r.points} pts` : `⚠️ ${t.taskName}: ${r.msg}`);
+      await completeTaskWithRetry(token, t.taskId, t.taskName, name, address);
     }
   }
 }
