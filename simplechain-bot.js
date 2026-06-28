@@ -274,25 +274,15 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
   const amountByPct = (bal * pct) / 100n;
   const amountToken = amountByPct < MIN_AMOUNT ? MIN_AMOUNT : amountByPct;
 
-  // Pair: SRW (native via WSRW) + token
-  // Sort: token0 < token1
-  // Kalau WSRW jadi token0, native SRW dikirim via value sebagai amount0
-  // Kalau WSRW jadi token1, native SRW dikirim via value sebagai amount1
-  // Kita pakai 10% dari amountToken sebagai estimasi native SRW
-  const amountSRW = amountToken / 10000n; // 0.01% dari token amount, super minimal // bisa disesuaikan, router akan pakai sesuai rasio pool
+  // Pair: token + SRW
+  // SRW selalu jadi token1 (biar UI auto-select SRW range)
+  const amountSRW = amountToken / 10000n; // 0.01% dari token amount
 
   let t0, t1, a0, a1, nativeValue;
-  if (WSRW.toLowerCase() < tokenAddress.toLowerCase()) {
-    // WSRW = token0, tokenAddress = token1
-    t0 = WSRW; t1 = tokenAddress;
-    a0 = amountSRW; a1 = amountToken;
-    nativeValue = amountSRW; // kirim native SRW sebagai amount0
-  } else {
-    // tokenAddress = token0, WSRW = token1
-    t0 = tokenAddress; t1 = WSRW;
-    a0 = amountToken; a1 = 0n; // WSRW sebagai token1, amount1 = 0, ga perlu native SRW
-    nativeValue = 0n;
-  }
+  // token0 = token, token1 = SRW
+  t0 = tokenAddress; t1 = WSRW;
+  a0 = amountToken; a1 = amountSRW;
+  nativeValue = amountSRW;
 
   await withRetry(() => ensureApproval(signer, tokenAddress, LIQUIDITY_ROUTER, amountToken), `approve ${tokenName}`);
 
@@ -303,7 +293,7 @@ async function doAddLiquidity(signer, tokenAddress, tokenName, name, address) {
     {
       token0: t0, token1: t1,
       fee: FEE_TIER,
-      tickLower: -887160, tickUpper: 887160,
+      tickLower: -276326, tickUpper: 276326,
       amount0Desired: a0, amount1Desired: a1,
       amount0Min: 0n, amount1Min: 0n,
       recipient: signer.address,
