@@ -407,7 +407,8 @@ async function processOnchainMode(wallet, name, address, swapTokens, liqTokens) 
   // SWAP
   if (swapTokens.length > 0) {
     const swapTasks = tasks.filter(t => t.taskCode === "SWAP_TOKEN" && t.status === "ACTIVE");
-    for (const tok of swapTokens) {
+    for (let i = 0; i < swapTokens.length; i++) {
+      const tok = swapTokens[i];
       log(name, address, `Swap SRW → ${tok.name} (${SWAP_COUNT}x)`);
       for (let s = 1; s <= SWAP_COUNT; s++) {
         const amount = randomBetween(SWAP_MIN, SWAP_MAX);
@@ -415,26 +416,27 @@ async function processOnchainMode(wallet, name, address, swapTokens, liqTokens) 
         await withRetry(() => doSwap(signer, tok.address, amount, name, address), `swap ${tok.name}`);
         await sleep(3000);
       }
-    }
-    // Complete swap tasks
-    for (const t of swapTasks) {
-      await sleep(DELAY);
-      await completeTaskWithRetry(token, t.taskId, t.taskName, name, address);
+      // Complete task yg sesuai index
+      if (swapTasks[i]) {
+        await sleep(DELAY);
+        await completeTaskWithRetry(token, swapTasks[i].taskId, swapTasks[i].taskName, name, address);
+      }
     }
   }
 
   // ADD LIQUIDITY
   if (liqTokens.length > 0) {
     const liqTasks = tasks.filter(t => t.taskCode === "PROVIDE_LIQUIDITY" && t.status === "ACTIVE");
-    for (const tok of liqTokens) {
+    for (let i = 0; i < liqTokens.length; i++) {
+      const tok = liqTokens[i];
       log(name, address, `Add liquidity SRW+${tok.name}...`);
       await withRetry(() => doAddLiquidity(signer, tok.address, tok.name, name, address), `add liq ${tok.name}`);
       await sleep(3000);
-    }
-    // Complete liquidity tasks
-    for (const t of liqTasks) {
-      await sleep(DELAY);
-      await completeTaskWithRetry(token, t.taskId, t.taskName, name, address);
+      // Complete task yg sesuai index (task ke-i untuk token ke-i)
+      if (liqTasks[i]) {
+        await sleep(DELAY);
+        await completeTaskWithRetry(token, liqTasks[i].taskId, liqTasks[i].taskName, name, address);
+      }
     }
   }
 }
