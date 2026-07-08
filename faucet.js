@@ -34,6 +34,17 @@ async function claimFaucet(address) {
 
   try {
     console.log(`[${address}] Membuka faucet...`);
+
+    let capturedResponse = null;
+
+    page.on('response', async (response) => {
+      if (response.url().includes('/api/front/walletClaimRecord/save')) {
+        try {
+          capturedResponse = await response.json();
+        } catch (_) {}
+      }
+    });
+
     await page.goto('https://www.simplechain.com/developer/faucet', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3000);
 
@@ -41,42 +52,25 @@ async function claimFaucet(address) {
     await page.waitForSelector('input', { timeout: 15000 });
     await page.fill('input', address);
 
-    console.log(`[${address}] Menunggu Turnstile selesai...`);
-    let turnstileToken = null;
-    for (let i = 0; i < 30; i++) {
-      turnstileToken = await page.evaluate(() => {
-        const el = document.querySelector('[name="cf-turnstile-response"]');
-        return el ? el.value : null;
-      });
-      if (turnstileToken) break;
-      await page.waitForTimeout(1000);
+    console.log(`[${address}] Menunggu Turnstile...`);
+    await page.waitForTimeout(8000);
+
+    const btn = await page.$('button[type="submit"]') || await page.$('button');
+    if (btn) {
+      await btn.click();
+      console.log(`[${address}] Klik submit...`);
     }
 
-    if (!turnstileToken) {
-      console.error(`[${address}] ❌ Turnstile gagal solve`);
-      return;
-    }
+    await page.waitForTimeout(8000);
 
-    console.log(`[${address}] Turnstile OK, submit...`);
-    const result = await page.evaluate(async ({ addr, token }) => {
-      const res = await fetch('https://www.simplechain.com/api/front/walletClaimRecord/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          walletAddress: addr,
-          tokenType: 1,
-          claimAmount: '0.1',
-          network: 'production',
-          turnstileToken: token
-        })
-      });
-      return res.json();
-    }, { addr: address, token: turnstileToken });
-
-    if (result.code === 200) {
-      console.log(`[${address}] ✅ Sukses! TxHash: ${result.data.txHash}`);
+    if (capturedResponse) {
+      if (capturedResponse.code === 200) {
+        console.log(`[${address}] ✅ Sukses! TxHash: ${capturedResponse.data.txHash}`);
+      } else {
+        console.log(`[${address}] ❌ Gagal: ${JSON.stringify(capturedResponse)}`);
+      }
     } else {
-      console.log(`[${address}] ❌ Gagal: ${JSON.stringify(result)}`);
+      console.log(`[${address}] ⚠️ Tidak ada response dari API`);
     }
 
   } catch (error) {
