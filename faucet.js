@@ -44,8 +44,8 @@ async function claimFaucet(address) {
       }
     });
 
-    await page.goto('https://www.simplechain.com/developer/faucet', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3000);
+    await page.goto('https://www.simplechain.com/developer/faucet', { waitUntil: 'load', timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(5000);
 
     console.log(`[${address}] Mengisi address...`);
     await page.waitForSelector('input', { timeout: 15000 });
