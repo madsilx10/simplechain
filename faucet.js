@@ -45,10 +45,10 @@ async function claimFaucet(address) {
     });
 
     await page.goto('https://www.simplechain.com/developer/faucet', { waitUntil: 'load', timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(8000);
 
     console.log(`[${address}] Mengisi address...`);
-    await page.waitForSelector('input', { timeout: 15000 });
+    await page.waitForSelector('input', { timeout: 30000 });
     await page.fill('input', address);
 
     console.log(`[${address}] Menunggu Turnstile...`);
