@@ -44,7 +44,8 @@ async function solveTurnstile() {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--single-process'
+      '--single-process',
+      '--disable-features=site-per-process'
     ]
   });
 
@@ -54,27 +55,25 @@ async function solveTurnstile() {
   const page = await context.newPage();
 
   try {
-    // izinkan turnstile CF, serve HTML kita untuk main page, block sisanya
+    // step 1: serve HTML kosong dulu buat set origin ke simplechain.com
     await page.route('**/*', route => {
-      const url = route.request().url();
-      if (url.includes('challenges.cloudflare.com')) {
-        route.continue();
-      } else if (url.startsWith('https://www.simplechain.com')) {
-        route.fulfill({ status: 200, contentType: 'text/html', body: HTML_TEMPLATE });
+      if (route.request().isNavigationRequest()) {
+        route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body></body></html>' });
       } else {
-        route.abort();
+        route.continue();
       }
     });
 
-    try {
-      await page.goto(PAGE_URL, { waitUntil: 'commit', timeout: 30000 });
-    } catch (e) {
-      if (!e.message.includes('Timeout') && !e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
-      log('goto timeout/aborted, lanjut polling...');
-    }
+    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
 
-    // jeda biar page stabil dulu
-    await new Promise(r => setTimeout(r, 5000));
+    // step 2: inject turnstile HTML via document.write (origin tetap simplechain.com)
+    await page.evaluate((html) => {
+      document.open();
+      document.write(html);
+      document.close();
+    }, HTML_TEMPLATE);
+
+    await new Promise(r => setTimeout(r, 3000));
 
     try {
       await page.screenshot({ path: 'screenshot.png', timeout: 10000 });
