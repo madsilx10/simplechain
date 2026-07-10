@@ -43,8 +43,7 @@ async function solveTurnstile() {
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--single-process'
+      '--disable-gpu'
     ]
   });
 
@@ -61,13 +60,20 @@ async function solveTurnstile() {
 
     await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // tunggu token muncul, max 60 detik
-    const token = await page.waitForFunction(() => {
-      const el = document.querySelector('[name="cf-turnstile-response"]');
-      return el && el.value ? el.value : null;
-    }, { timeout: 60000 });
+    // polling manual, max 60 detik
+    let tokenValue = '';
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        tokenValue = await page.evaluate(() => {
+          const el = document.querySelector('[name="cf-turnstile-response"]');
+          return el ? el.value : '';
+        });
+        if (tokenValue) break;
+      } catch (_) {}
+    }
 
-    const tokenValue = await token.jsonValue();
+    if (!tokenValue) throw new Error('Turnstile token timeout');
     return tokenValue;
   } finally {
     await browser.close();
