@@ -66,14 +66,21 @@ async function solveTurnstile() {
     });
 
     try {
-      await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.goto(PAGE_URL, { waitUntil: 'commit', timeout: 30000 });
     } catch (e) {
       if (!e.message.includes('Timeout') && !e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
       log('goto timeout/aborted, lanjut polling...');
     }
 
-    await page.screenshot({ path: 'screenshot.png' });
-    log('Screenshot disimpan: screenshot.png');
+    // jeda biar page stabil dulu
+    await new Promise(r => setTimeout(r, 5000));
+
+    try {
+      await page.screenshot({ path: 'screenshot.png', timeout: 10000 });
+      log('Screenshot disimpan: screenshot.png');
+    } catch (e) {
+      warn('Screenshot gagal: ' + e.message);
+    }
 
     // polling token, max 60 detik
     let tokenValue = '';
