@@ -2,148 +2,184 @@ Object.defineProperty(process, 'platform', { get: () => 'linux' });
 
 const { chromium } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth')();
+const fs = require('fs');
+const axios = require('axios');
+
 chromium.use(stealthPlugin);
 
-const fs = require('fs');
-const readline = require('readline');
+// ── Config ──────────────────────────────────────────────
+const WALLETS_FILE = 'wallets.txt';
+const START_FROM   = parseInt(process.argv[2]) || 1; // node script.js 5 → mulai dari baris ke-5
+const SITEKEY      = '0x4AAAAAADqBTU2jemlADVj4';
+const PAGE_URL     = 'https://www.simplechain.com/developer/faucet';
+const CLAIM_URL    = 'https://www.simplechain.com/api/front/walletClaimRecord/save';
+const DELAY_MS     = 3000; // jeda antar akun (ms)
+// ────────────────────────────────────────────────────────
 
-// ==================== KONFIGURASI BROWSERLESS ====================
-const BROWSERLESS_TOKEN = 'MASUKKAN_TOKEN_BROWSERLESS_LO_DI_SINI'; 
-// =================================================================
+const HTML_TEMPLATE = `<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</head>
+<body>
+  <form>
+    <div class="cf-turnstile"
+         data-sitekey="${SITEKEY}"
+         data-theme="dark">
+    </div>
+  </form>
+</body>
+</html>`;
 
-function readWallets(file) {
+function log(msg)  { console.log(`[+] ${msg}`); }
+function warn(msg) { console.log(`[!] ${msg}`); }
+function err(msg)  { console.log(`[x] ${msg}`); }
+
+async function solveTurnstile() {
+  const browser = await chromium.launch({
+    executablePath: '/data/data/com.termux/files/usr/bin/chromium-browser',
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process'
+    ]
+  });
+
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+  });
+  const page = await context.newPage();
+
   try {
-    return fs.readFileSync(file, 'utf-8')
-      .split('\n')
-      .map(l => l.trim())
-      .filter(Boolean);
-  } catch (e) {
-    console.error(`❌ Gagal membaca file ${file}. Pastiin filenya udah dibuat.`);
-    process.exit(1);
-  }
-}
-
-async function claimFaucet(address) {
-  let browser;
-  try {
-    console.log(`\n[${address}] Menghubungkan ke Cloud Browserless.io...`);
-    
-    if (BROWSERLESS_TOKEN === 'MASUKKAN_TOKEN_BROWSERLESS_LO_DI_SINI') {
-      console.log('❌ Error: Lu belum masukin token Browserless lo di dalam skrip!');
-      return;
-    }
-
-    const browserWSEndpoint = `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}&--disable-blink-features=AutomationControlled&--start-maximized`;
-    browser = await chromium.connectOverCDP(browserWSEndpoint);
-    
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36', // Disamakan dengan screenshot lo
-      viewport: { width: 1280, height: 1000 }, 
-      locale: 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7' // Disamakan dengan Accept-Language lo
+    // intercept request ke faucet page, serve fake HTML dengan widget turnstile
+    await page.route('https://www.simplechain.com/**', route => {
+      route.fulfill({ status: 200, contentType: 'text/html', body: HTML_TEMPLATE });
     });
-    
-    const page = await context.newPage();
 
-    console.log(`[${address}] Membuka halaman faucet via Cloud...`);
-    await page.goto('https://www.simplechain.com/developer/faucet', { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    // --- BYPASS / KLIK CLOUDFLARE TURNSTILE ---
-    console.log(`[${address}] Mengecek Cloudflare Turnstile...`);
-    try {
-      const turnstileFrame = page.frameLocator('iframe[src*="challenges.cloudflare.com"]');
-      const checkbox = turnstileFrame.locator('#challenge-stage, .mark, input[type="checkbox"]');
-      
-      await checkbox.first().waitFor({ state: 'visible', timeout: 15000 });
-      console.log(`[${address}] Turnstile ditemukan, mencoba mengklik...`);
-      await page.waitForTimeout(1000);
-      await checkbox.first().click();
-    } catch (e) {
-      console.log(`[${address}] ℹ️ Turnstile dilewati.`);
-    }
+    // tunggu token muncul, max 60 detik
+    const token = await page.waitForFunction(() => {
+      const el = document.querySelector('[name="cf-turnstile-response"]');
+      return el && el.value ? el.value : null;
+    }, { timeout: 60000 });
 
-    // --- TUNGGU TOKEN TURNSTILE DIGENERATE WEB ---
-    console.log(`[${address}] Memastikan token Turnstile ter-inject ke sistem...`);
-    await page.waitForTimeout(6000); // Beri jeda mutlak biar dapet token kayak di screenshot "1.xyG..."
-
-    // --- PROSES FILL ADDRESS ---
-    console.log(`[${address}] Mengisi address...`);
-    const inputWallet = page.locator('input[placeholder*="SimpleChain"], input[placeholder*="address"], input[type="text"]').first();
-    await inputWallet.waitFor({ state: 'visible', timeout: 10000 });
-    await inputWallet.fill(address);
-    await page.waitForTimeout(1000);
-
-    // --- PROSES CLICK SUBMIT & MELEPAS JARING RESPONS ---
-    console.log(`[${address}] Klik "Send 0.1 SRW" dan mengunci API...`);
-    const btn = page.getByText('Send 0.1 SRW').first();
-    
-    // Kita tangkap langsung secara global apa pun respons dari target URL tanpa filter ketat
-    const [response] = await Promise.all([
-      page.waitForResponse(res => res.url().includes('walletClaimRecord/save'), { timeout: 30000 }).catch(() => null),
-      btn.click({ force: true })
-    ]);
-
-    // --- VALIDASI RESPONS BERDASARKAN SCREENSHOT KE-3 ---
-    if (response) {
-      const status = response.status();
-      console.log(`[${address}] 🌐 HTTP Status Terdeteksi: ${status}`);
-      try {
-        const resJson = await response.json();
-        // Sesuai isi screenshot: code 200 atau message "操作成功"
-        if (resJson.code === 200 || resJson.message?.includes('成功')) {
-          console.log(`[${address}] ✅ SUKSES KLAIM! TxHash: ${resJson.data?.txHash || 'Berhasil'}`);
-        } else {
-          console.log(`[${address}] ❌ Gagal dari Sistem Web: ${JSON.stringify(resJson)}`);
-        }
-      } catch (_) {
-        const raw = await response.text();
-        console.log(`[${address}] ❌ Gagal parse JSON. Respon teks: ${raw.substring(0, 150)}`);
-      }
-    } else {
-      console.log(`[${address}] ⚠️ Tetap tidak mendapat respons jaringan. Fix, Cloudflare memblokir klik dari Server Cloud Browserless.`);
-    }
-
-  } catch (error) {
-    console.error(`[${address}] ❌ Error: ${error.message}`);
+    const tokenValue = await token.jsonValue();
+    return tokenValue;
   } finally {
-    if (browser) {
-      await browser.close();
-      console.log(`[${address}] Browser di-close, lanjut...`);
-    }
+    await browser.close();
   }
 }
 
-// ==================== LOGIKA MENU UTAMA ====================
-(async () => {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q) => new Promise(res => rl.question(q, res));
+async function claimFaucet(wallet) {
+  log(`Solving turnstile untuk ${wallet}...`);
+  const turnstileToken = await solveTurnstile();
+  log(`Token didapat (${turnstileToken.slice(0, 30)}...)`);
 
-  const wallets = readWallets('wallet.txt');
-  const total = wallets.length;
-  console.log(`Total wallet terdeteksi: ${total}`);
+  const payload = {
+    walletAddress: wallet,
+    tokenType: 1,
+    claimAmount: '0.1',
+    network: 'production',
+    turnstileToken
+  };
 
-  console.log('\nPilih mode running:');
-  console.log('1. Jalankan 1 wallet tertentu');
-  console.log('2. Jalankan semua wallet');
-  console.log('3. Jalankan mulai dari nomor urut X sampai akhir');
-  const mode = (await ask('Pilihan (1/2/3): ')).trim();
+  const res = await axios.post(CLAIM_URL, payload, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': 'https://www.simplechain.com',
+      'Referer': 'https://www.simplechain.com/developer/faucet',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  });
 
-  let start = 0, end = total;
+  return res.data;
+}
 
-  if (mode === '1') {
-    const idx = parseInt(await ask(`Nomor urut wallet (1-${total}): `)) - 1;
-    start = idx; end = idx + 1;
-  } else if (mode === '3') {
-    start = parseInt(await ask(`Mulai dari nomor urut (1-${total}): `)) - 1;
+function prompt(question) {
+  return new Promise(resolve => {
+    process.stdout.write(question);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf-8');
+    process.stdin.once('data', data => {
+      process.stdin.pause();
+      resolve(data.trim());
+    });
+  });
+}
+
+async function main() {
+  const lines = fs.readFileSync(WALLETS_FILE, 'utf-8')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean);
+
+  log(`Total wallet di file: ${lines.length}`);
+  console.log('');
+  console.log('[?] Pilih mode:');
+  console.log('  1. Satu akun');
+  console.log('  2. Semua akun');
+  console.log('  3. Dari baris X sampai akhir');
+  console.log('');
+
+  const pilihan = await prompt('Pilihan: ');
+
+  let wallets = [];
+  let startLine = 1;
+
+  if (pilihan === '1') {
+    const baris = await prompt(`Masukkan nomor baris (1-${lines.length}): `);
+    const idx = parseInt(baris) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= lines.length) {
+      err('Nomor baris tidak valid'); process.exit(1);
+    }
+    wallets = [lines[idx]];
+    startLine = idx + 1;
+  } else if (pilihan === '2') {
+    wallets = lines;
+    startLine = 1;
+  } else if (pilihan === '3') {
+    const baris = await prompt(`Mulai dari baris: `);
+    const idx = parseInt(baris) - 1;
+    if (isNaN(idx) || idx < 0 || idx >= lines.length) {
+      err('Nomor baris tidak valid'); process.exit(1);
+    }
+    wallets = lines.slice(idx);
+    startLine = idx + 1;
+  } else {
+    err('Pilihan tidak valid'); process.exit(1);
   }
 
-  rl.close();
+  console.log('');
+  log(`Proses ${wallets.length} akun, mulai baris ${startLine}\n`);
 
-  for (let i = start; i < end; i++) {
-    if (wallets[i]) {
-      await claimFaucet(wallets[i]);
-      console.log(`Jeda 5 detik sebelum pindah wallet...`);
-      await new Promise(r => setTimeout(r, 5000));
+  for (let i = 0; i < wallets.length; i++) {
+    const wallet = wallets[i];
+    const lineNo = startLine + i;
+    log(`[${lineNo}/${lines.length}] ${wallet}`);
+
+    try {
+      const result = await claimFaucet(wallet);
+      if (result.code === 200) {
+        log(`Sukses! txHash: ${result.data?.txHash}`);
+      } else {
+        warn(`Gagal: ${JSON.stringify(result)}`);
+      }
+    } catch (e) {
+      err(`Error: ${e.response?.data ? JSON.stringify(e.response.data) : e.message}`);
+    }
+
+    if (i < wallets.length - 1) {
+      log(`Jeda ${DELAY_MS / 1000}s...\n`);
+      await new Promise(r => setTimeout(r, DELAY_MS));
     }
   }
-  console.log('\n[SELESAI] Semua proses antrean wallet beres.');
-})();
+
+  log('Selesai!');
+}
+
+main();
