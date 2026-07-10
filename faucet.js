@@ -68,8 +68,12 @@ async function solveTurnstile() {
     try {
       await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     } catch (e) {
-      if (!e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
+      if (!e.message.includes('Timeout') && !e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
+      log('goto timeout/aborted, lanjut polling...');
     }
+
+    await page.screenshot({ path: 'screenshot.png' });
+    log('Screenshot disimpan: screenshot.png');
 
     // polling token, max 60 detik
     let tokenValue = '';
