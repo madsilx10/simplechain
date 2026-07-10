@@ -3,7 +3,7 @@ Object.defineProperty(process, 'platform', { get: () => 'linux' });
 const { chromium } = require('playwright-extra');
 const stealthPlugin = require('puppeteer-extra-plugin-stealth')();
 const fs = require('fs');
-const axios = require('axios');
+
 
 chromium.use(stealthPlugin);
 
@@ -87,17 +87,19 @@ async function claimFaucet(wallet) {
     turnstileToken
   };
 
-  const res = await axios.post(CLAIM_URL, payload, {
+  const res = await fetch(CLAIM_URL, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Origin': 'https://www.simplechain.com',
       'Referer': 'https://www.simplechain.com/developer/faucet',
       'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
       'X-Requested-With': 'XMLHttpRequest'
-    }
+    },
+    body: JSON.stringify(payload)
   });
 
-  return res.data;
+  return res.json();
 }
 
 function prompt(question) {
@@ -170,7 +172,7 @@ async function main() {
         warn(`Gagal: ${JSON.stringify(result)}`);
       }
     } catch (e) {
-      err(`Error: ${e.response?.data ? JSON.stringify(e.response.data) : e.message}`);
+      err(`Error: ${e.message}`);
     }
 
     if (i < wallets.length - 1) {
