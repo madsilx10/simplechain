@@ -53,18 +53,9 @@ async function solveTurnstile() {
   const page = await context.newPage();
 
   try {
-    // intercept request ke faucet page, serve fake HTML dengan widget turnstile
-    await page.route('https://www.simplechain.com/**', route => {
-      route.fulfill({ status: 200, contentType: 'text/html', body: HTML_TEMPLATE });
-    });
+    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    try {
-      await page.goto(PAGE_URL, { waitUntil: 'commit', timeout: 60000 });
-    } catch (e) {
-      if (!e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
-    }
-
-    // polling manual, max 60 detik
+    // polling token dari widget turnstile di halaman asli, max 60 detik
     let tokenValue = '';
     for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 1000));
