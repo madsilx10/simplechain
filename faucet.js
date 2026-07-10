@@ -55,23 +55,17 @@ async function solveTurnstile() {
   const page = await context.newPage();
 
   try {
-    // step 1: serve HTML kosong dulu buat set origin ke simplechain.com
+    // block resource berat, biarkan JS dan turnstile jalan
     await page.route('**/*', route => {
-      if (route.request().isNavigationRequest()) {
-        route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body></body></html>' });
+      const type = route.request().resourceType();
+      if (['image', 'font', 'media'].includes(type)) {
+        route.abort();
       } else {
         route.continue();
       }
     });
 
-    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-
-    // step 2: inject turnstile HTML via document.write (origin tetap simplechain.com)
-    await page.evaluate((html) => {
-      document.open();
-      document.write(html);
-      document.close();
-    }, HTML_TEMPLATE);
+    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     await new Promise(r => setTimeout(r, 3000));
 
