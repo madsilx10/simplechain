@@ -53,9 +53,25 @@ async function solveTurnstile() {
   const page = await context.newPage();
 
   try {
-    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // izinkan turnstile CF, serve HTML kita untuk main page, block sisanya
+    await page.route('**/*', route => {
+      const url = route.request().url();
+      if (url.includes('challenges.cloudflare.com')) {
+        route.continue();
+      } else if (url.startsWith('https://www.simplechain.com')) {
+        route.fulfill({ status: 200, contentType: 'text/html', body: HTML_TEMPLATE });
+      } else {
+        route.abort();
+      }
+    });
 
-    // polling token dari widget turnstile di halaman asli, max 60 detik
+    try {
+      await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (e) {
+      if (!e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
+    }
+
+    // polling token, max 60 detik
     let tokenValue = '';
     for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 1000));
