@@ -58,7 +58,7 @@ async function solveTurnstile() {
       route.fulfill({ status: 200, contentType: 'text/html', body: HTML_TEMPLATE });
     });
 
-    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(PAGE_URL, { waitUntil: 'commit', timeout: 60000 });
 
     // polling manual, max 60 detik
     let tokenValue = '';
