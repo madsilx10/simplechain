@@ -67,14 +67,26 @@ async function solveTurnstile() {
 
     await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 8000));
 
     try {
-      await page.screenshot({ path: 'screenshot.png', timeout: 10000 });
+      await page.screenshot({ path: 'screenshot.png', fullPage: true, timeout: 10000 });
       log('Screenshot disimpan: screenshot.png');
     } catch (e) {
       warn('Screenshot gagal: ' + e.message);
     }
+
+    // cek status turnstile di DOM
+    const tsStatus = await page.evaluate(() => {
+      const div = document.querySelector('.cf-turnstile, [data-sitekey]');
+      const input = document.querySelector('[name="cf-turnstile-response"]');
+      return {
+        widgetFound: !!div,
+        inputFound: !!input,
+        inputValue: input ? input.value : ''
+      };
+    }).catch(() => ({}));
+    log(`Turnstile status: ${JSON.stringify(tsStatus)}`);
 
     // polling token, max 60 detik
     let tokenValue = '';
