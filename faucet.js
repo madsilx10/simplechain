@@ -58,7 +58,11 @@ async function solveTurnstile() {
       route.fulfill({ status: 200, contentType: 'text/html', body: HTML_TEMPLATE });
     });
 
-    await page.goto(PAGE_URL, { waitUntil: 'commit', timeout: 60000 });
+    try {
+      await page.goto(PAGE_URL, { waitUntil: 'commit', timeout: 60000 });
+    } catch (e) {
+      if (!e.message.includes('ERR_ABORTED') && !e.message.includes('net::')) throw e;
+    }
 
     // polling manual, max 60 detik
     let tokenValue = '';
