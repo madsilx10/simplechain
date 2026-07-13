@@ -28,7 +28,10 @@ async function getTurnstileToken() {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--single-process'
+      '--disable-software-rasterizer',
+      '--no-zygote',
+      '--disable-extensions',
+      '--mute-audio'
     ]
   });
 
