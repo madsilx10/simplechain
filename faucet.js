@@ -1,55 +1,61 @@
+Object.defineProperty(process, 'platform', { get: () => 'linux' });
+
 const fs = require('fs');
+const { chromium } = require('playwright-extra');
+const stealthPlugin = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealthPlugin);
 
 // ── Config ──────────────────────────────────────────────
 const WALLETS_FILE = 'wallets.txt';
 const CLAIM_URL    = 'https://www.simplechain.com/api/front/walletClaimRecord/save';
-const DELAY_MS     = 3000; // jeda antar akun (ms)
-
-// Sudah disesuaikan dengan port 8877 dan endpoint /solve milik server.py
-const SOLVER_API_URL = 'http://127.0.0.1:8877/solve'; 
-const SITEKEY        = '0x4AAAAAADqBTU2jemlADVj4';
-const PAGE_URL       = 'https://www.simplechain.com/developer/faucet';
-
-// User Agent Mobile biar konsisten dan lolos filter
-const SHARED_USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+const PAGE_URL     = 'https://www.simplechain.com/developer/faucet';
+const DELAY_MS     = 5000;
+const SHARED_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 // ────────────────────────────────────────────────────────
 
 function log(msg)  { console.log(`[+] ${msg}`); }
 function warn(msg) { console.log(`[!] ${msg}`); }
 function err(msg)  { console.log(`[x] ${msg}`); }
 
-// Fungsi buat minta token Turnstile ke server Python
-async function getTurnstileTokenViaAPI() {
-  log('Meminta token bypass Turnstile dari API Solver...');
-  
-  try {
-    const res = await fetch(SOLVER_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'turnstile', // Ditambahkan tipe captcha sesuai kebutuhan server.py
-        sitekey: SITEKEY,
-        url: PAGE_URL
-      })
-    });
+async function getTurnstileToken() {
+  log('Membuka browser buat solve Turnstile...');
 
-    if (!res.ok) throw new Error(`Solver API Error! Status: ${res.status}`);
-    
-    const data = await res.json();
-    // Mengambil token sesuai format response pada umumnya (token / solution / text)
-    const token = data.token || data.solution || data.text;
-    
-    if (!token) throw new Error('API Solver tidak mengembalikan token yang valid bray.');
-    return token;
-  } catch (e) {
-    throw new Error(`Gagal komunikasi dengan Solver bray: ${e.message}`);
+  const browser = await chromium.launch({
+    executablePath: '/data/data/com.termux/files/usr/bin/chromium-browser',
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process'
+    ]
+  });
+
+  const context = await browser.newContext({ userAgent: SHARED_USER_AGENT });
+  const page = await context.newPage();
+
+  try {
+    await page.goto(PAGE_URL, { waitUntil: 'networkidle', timeout: 60000 });
+    log('Halaman terbuka, nunggu Turnstile solve...');
+
+    // Tunggu token Turnstile muncul (max 30 detik)
+    const token = await page.waitForFunction(() => {
+      const el = document.querySelector('[name="cf-turnstile-response"]');
+      return el && el.value.length > 0 ? el.value : null;
+    }, { timeout: 30000 });
+
+    const tokenValue = await token.jsonValue();
+    log(`Token didapat! (${tokenValue.slice(0, 20)}...)`);
+    return tokenValue;
+
+  } finally {
+    await browser.close();
   }
 }
 
 async function claimFaucet(wallet) {
-  // Ambil token dari solver lokal tanpa buka Chromium
-  const turnstileToken = await getTurnstileTokenViaAPI();
-  log(`Token sukses didapat via API! (${turnstileToken.slice(0, 20)}...)`);
+  const turnstileToken = await getTurnstileToken();
 
   const payload = {
     walletAddress: wallet,
@@ -64,17 +70,14 @@ async function claimFaucet(wallet) {
     headers: {
       'Content-Type': 'application/json',
       'Origin': 'https://www.simplechain.com',
-      'Referer': 'https://www.simplechain.com/developer/faucet',
+      'Referer': PAGE_URL,
       'User-Agent': SHARED_USER_AGENT,
       'X-Requested-With': 'XMLHttpRequest'
     },
     body: JSON.stringify(payload)
   });
 
-  if (!res.ok) {
-    throw new Error(`HTTP Error! Status: ${res.status}`);
-  }
-
+  if (!res.ok) throw new Error(`HTTP Error! Status: ${res.status}`);
   return res.json();
 }
 
